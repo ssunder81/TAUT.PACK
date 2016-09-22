@@ -1,0 +1,129 @@
+*********************************************************************
+*-----------------------------------------------------------------------------
+* <Rating>-41</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE TAUT.JOURNAL.COMPARE.LOAD
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INCLUDE TAUT.BP I_F.TAUT.PARAMETER
+    $INCLUDE TAUT.BP I_F.TAUT.APPL.DETAILS
+    $INCLUDE TAUT.BP I_TAUT.JOURNAL.COMPARE.COMMON
+    $INCLUDE TAUT.BP I_F.TAUT.APPL.CHANGE
+
+    GOSUB OPEN.FILES
+    GOSUB OPEN.LOG.FILES
+    GOSUB OPEN.TAUT.OFS.QUEUE
+
+    RETURN
+
+OPEN.FILES:
+***********
+    FN.SAVE.LIST  = "&SAVEDLISTS&"
+    F.SAVE.LIST = ''
+    CALL OPF(FN.SAVE.LIST,F.SAVE.LIST)
+
+    FN.TAUT.PARAM = 'F.TAUT.PARAMETER'
+    F.TAUT.PARAM = ''
+    CALL OPF(FN.TAUT.PARAM,F.TAUT.PARAM)
+
+    FN.TAUT.APPL.CHANGE = 'F.TAUT.APPL.CHANGE'
+    F.TAUT.APPL.CHANGE = ''
+    CALL OPF(FN.TAUT.APPL.CHANGE,F.TAUT.APPL.CHANGE)
+
+    R.TAUT.APPL.CHANGE.SYS = ''
+    CHG.READ.ERR = ''
+    CALL F.READ(FN.TAUT.APPL.CHANGE,'SYSTEM',R.TAUT.APPL.CHANGE.SYS,F.TAUT.APPL.CHANGE,CHG.READ.ERR)
+
+    R.TAUT.PARAM = ''
+    TAUT.PARAM.READ.ERR = ''
+    CALL F.READ(FN.TAUT.PARAM,'SYSTEM',R.TAUT.PARAM,F.TAUT.PARAM,TAUT.PARAM.READ.ERR)
+
+    IF R.TAUT.PARAM ELSE
+        ERR.INFO<1> = 'TAUT.JOURNAL.COMPARE.LOAD'
+        ERR.INFO<2> = ''
+        ERR.INFO<4> = "TAUT.PARAM RECORD NOT FOUND"
+        CALL FATAL.ERROR(ERR.INFO)
+    END
+
+    RETURN
+
+OPEN.LOG.FILES:
+***************
+
+    T.LOG.LEVEL = R.TAUT.PARAM<TAUT.LOG.LEVEL>
+    JNL.DIFF.REPORT = R.TAUT.PARAM<TAUT.COMPARE.JNL.REPORT>
+    IF T.LOG.LEVEL NE 'NONE' THEN
+        LOG.FILE = R.TAUT.PARAM<TAUT.LOG.FILE>
+        IF LOG.FILE EQ '' THEN
+            LOG.FILE = "&SAVEDLISTS&"
+        END
+
+        F.TAUT.LOG = ''
+        OPEN LOG.FILE TO F.TAUT.LOG ELSE
+            LOG.LEVEL = 1     ;* Fatal
+            TAUT.TEXT = 'Cannot open the LOG file: ':LOG.FILE
+            GOSUB UPDATE.TAUT.LOG
+            RETURN
+        END
+
+        F.JNL.DIFF.REPORT = ''
+        OPEN JNL.DIFF.REPORT TO F.JNL.DIFF.REPORT ELSE
+            CR.FLD.CMD = "CREATE.FILE ":JNL.DIFF.REPORT :" TYPE=UD"
+            EXECUTE CR.FLD.CMD
+            OPEN JNL.DIFF.REPORT TO F.JNL.DIFF.REPORT ELSE
+                LOG.LEVEL = 1 ;* Fatal
+                TAUT.TEXT = 'Cannot open the JNL Compare Report File : ':JNL.DIFF.REPORT
+                GOSUB UPDATE.TAUT.LOG
+                RETURN
+            END
+        END
+
+    END
+
+    RETURN
+
+OPEN.TAUT.OFS.QUEUE:
+********************
+    DATA.SYNC = R.TAUT.PARAM<TAUT.DATA.SYNC>
+    IF DATA.SYNC EQ 'OFFLINE' THEN
+*        FN.TAUT.STORE.JOURNAL = R.TAUT.PARAM<TAUT.STORE.JNL>
+        FN.TAUT.STORE.JOURNAL = R.TAUT.PARAM<TAUT.PROCESSED.JNL>
+        F.TAUT.STORE.JOURNAL  = ''
+        OPEN FN.TAUT.STORE.JOURNAL TO F.TAUT.STORE.JOURNAL ELSE
+            LOG.LEVEL = 1     ;*Fatal
+            TAUT.TEXT = 'Cannot open the STORE JNL QUEUE: ':FN.TAUT.STORE.JOURNAL
+            GOSUB UPDATE.TAUT.LOG
+            RETURN
+        END
+    END
+    SOURCE.FILE = R.TAUT.PARAM<TAUT.SOURCE.FILE>
+    RETURN
+
+
+UPDATE.TAUT.LOG:
+****************
+    YID = ''
+    CALL ALLOCATE.UNIQUE.TIME(YID)
+    IF TAUT.TEXT THEN
+        IF T.LOG.LEVEL EQ 'FULL' THEN
+            BEGIN CASE
+            CASE LOG.LEVEL = 1
+                TAUT.TEXT = "Critical Error :" :TIMEDATE():" ":TAUT.TEXT
+            CASE LOG.LEVEL = 2
+                TAUT.TEXT = "Warning  :" :TIMEDATE():" ":TAUT.TEXT
+            CASE LOG.LEVEL = 3
+                TAUT.TEXT = "Info :" :TIMEDATE():" ":TAUT.TEXT
+            END CASE
+            WRITE TAUT.TEXT TO F.TAUT.LOG,YID
+        END
+
+        IF T.LOG.LEVEL EQ 'FATAL' AND LOG.LEVEL EQ 1 THEN
+            TAUT.TEXT = "Critical Error :" :TIMEDATE():" ":TAUT.TEXT
+            WRITE TAUT.TEXT TO F.TAUT.LOG,YID
+        END
+    END
+
+    TAUT.TEXT = ''
+    RETURN
+END

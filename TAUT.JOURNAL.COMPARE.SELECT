@@ -1,0 +1,18 @@
+*-----------------------------------------------------------------------------
+* <Rating>0</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE TAUT.JOURNAL.COMPARE.SELECT
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INCLUDE TAUT.BP I_TAUT.JOURNAL.COMPARE.COMMON
+
+    ID.LIST = ''
+    LIST.PARAMETERS    = ''
+    LIST.PARAMETERS<2> =  FN.TAUT.STORE.JOURNAL
+
+    CALL BATCH.BUILD.LIST(LIST.PARAMETERS,ID.LIST)
+
+    RETURN
+END
+

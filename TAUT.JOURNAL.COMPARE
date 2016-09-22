@@ -1,0 +1,126 @@
+*-----------------------------------------------------------------------------
+* <Rating>595</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE TAUT.JOURNAL.COMPARE(TAUT.JNL.ID)
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INCLUDE TAUT.BP I_F.TAUT.APPL.CHANGE
+    $INCLUDE TAUT.BP I_TAUT.JOURNAL.COMPARE.COMMON
+
+    TG.JNL.MISMATCH = ""
+    APPLN.NAME = FIELD(TAUT.JNL.ID,'_',2)
+    IF JNL.DIFF.REPORT THEN
+        CR.APPL.FOLDER = JNL.DIFF.REPORT: "/":APPLN.NAME
+        OPEN CR.APPL.FOLDER TO F.JNL.DIFF.REPORT ELSE
+            CREATE.CMD = "CREATE.FILE ": CR.APPL.FOLDER :" TYPE=UD"
+            EXECUTE CREATE.CMD
+            OPEN CR.APPL.FOLDER TO F.JNL.DIFF.REPORT ELSE
+                LOG.LEVEL = 1 ;* Fatal
+                TAUT.TEXT = 'Cannot open the JNL Compare Report File : ':JNL.DIFF.REPORT
+                GOSUB UPDATE.TAUT.LOG
+                RETURN
+            END
+        END
+    END
+
+    CALL F.READ(FN.TAUT.STORE.JOURNAL,TAUT.JNL.ID,R.TAUT.STORE.JOURNAL,F.TAUT.STORE.JOURNAL,JNL.ERR)
+    IF R.TAUT.STORE.JOURNAL THEN
+        SRC.JNL.MISMATCH = ''
+        SOURCE.JNL.RESULT = R.TAUT.STORE.JOURNAL<1>
+        TARGET.JNL.RESULT = R.TAUT.STORE.JOURNAL<2>
+
+        SOURCE.MISMATCH.RESULT = ''
+        TARGET.MISMATCH.RESULT = ''
+        MISMATCH.REPORT  = ''
+        NO.OF.JNL.ENTRY = DCOUNT(SOURCE.JNL.RESULT,@VM)
+        FOR  I = 1 TO NO.OF.JNL.ENTRY
+            SRC.JNL.FILE = FIELD(SOURCE.JNL.RESULT<1,I>,' ',1)
+            FINDSTR SRC.JNL.FILE IN TARGET.JNL.RESULT<1> SETTING FPOS,VPOS,SPOS THEN
+                SOURCE.JNL.RESULT<1,I> = ''
+                DEL TARGET.JNL.RESULT<1,VPOS>
+
+            END ELSE
+                JNL.ERR.DESC = "Didn't Match with Target"
+                IF SRC.JNL.FILE MATCHES R.TAUT.APPL.CHANGE.SYS<TAUT.APC.OB.APPLICATION> THEN
+                    JNL.ERR.DESC = "T24 File Made OBSOLETE"
+                END
+                SOURCE.JNL.RESULT<1,I> = ''
+                IF SRC.JNL.MISMATCH THEN
+                    LOCATE SRC.JNL.FILE IN SRC.JNL.MISMATCH SETTING SJ.POS ELSE
+                        SRC.JNL.MISMATCH := FM: SRC.JNL.FILE
+                        SOURCE.MISMATCH.RESULT<-1> =   TAUT.JNL.ID :',':"SOURCE" : ',' :SRC.JNL.FILE  :',' : JNL.ERR.DESC
+                    END
+                END ELSE
+                    SRC.JNL.MISMATCH = SRC.JNL.FILE
+                    SOURCE.MISMATCH.RESULT<-1> =   TAUT.JNL.ID :',':"SOURCE" : ',' :SRC.JNL.FILE  :',' : JNL.ERR.DESC
+                END
+            END
+        NEXT I
+
+        MISMATCH.REPORT = SOURCE.MISMATCH.RESULT
+
+        JNL.ERR.DESC = ''
+        NO.OF.JNL.ENTRY = DCOUNT(TARGET.JNL.RESULT,@VM)
+
+        FOR  I = 1 TO NO.OF.JNL.ENTRY
+            PRINT "I....." : I
+            TG.JNL.FILE = FIELD(TARGET.JNL.RESULT<1,I>,' ',1)
+            PRINT "TG.JNL.FILE : " : TG.JNL.FILE
+            JNL.ERR.DESC =  "Didn't Match with Source"
+
+            IF TG.JNL.FILE MATCHES R.TAUT.APPL.CHANGE.SYS<TAUT.APC.NEW.APPLICATION> THEN
+                JNL.ERR.DESC = "New T24 File"
+            END
+
+            IF TG.JNL.MISMATCH THEN
+                LOCATE TG.JNL.FILE IN TG.JNL.MISMATCH SETTING TG.POS THEN
+                    TARGET.JNL.RESULT<1,I> = ''
+                END ELSE
+                    TG.JNL.MISMATCH := FM: TG.JNL.FILE
+                    TARGET.MISMATCH.RESULT<-1> =   TAUT.JNL.ID :',':"TARGET" : ',' :TG.JNL.FILE  :',' : JNL.ERR.DESC
+                END
+            END ELSE
+                TG.JNL.MISMATCH = TG.JNL.FILE
+                TARGET.MISMATCH.RESULT<-1> =   TAUT.JNL.ID :',':"TARGET" : ',' :TG.JNL.FILE  :',' : JNL.ERR.DESC
+            END
+        NEXT I
+
+        IF MISMATCH.REPORT THEN
+            MISMATCH.REPORT :=  FM: TARGET.MISMATCH.RESULT
+        END ELSE
+            MISMATCH.REPORT =  TARGET.MISMATCH.RESULT
+        END
+        IF MISMATCH.REPORT THEN
+            WRITE MISMATCH.REPORT TO F.JNL.DIFF.REPORT,TAUT.JNL.ID
+        END
+
+    END
+
+    RETURN
+
+UPDATE.TAUT.LOG:
+****************
+    YID = ''
+    CALL ALLOCATE.UNIQUE.TIME(YID)
+    IF TAUT.TEXT THEN
+        IF T.LOG.LEVEL EQ 'FULL' THEN
+            BEGIN CASE
+            CASE LOG.LEVEL = 1
+                TAUT.TEXT = "Critical Error :" :TIMEDATE():" ":TAUT.TEXT
+            CASE LOG.LEVEL = 2
+                TAUT.TEXT = "Warning  :" :TIMEDATE():" ":TAUT.TEXT
+            CASE LOG.LEVEL = 3
+                TAUT.TEXT = "Info :" :TIMEDATE():" ":TAUT.TEXT
+            END CASE
+            WRITE TAUT.TEXT TO F.TAUT.LOG,YID
+        END
+
+        IF T.LOG.LEVEL EQ 'FATAL' AND LOG.LEVEL EQ 1 THEN
+            TAUT.TEXT = "Critical Error :" :TIMEDATE():" ":TAUT.TEXT
+            WRITE TAUT.TEXT TO F.TAUT.LOG,YID
+        END
+    END
+    TAUT.TEXT = ''
+    RETURN
+END

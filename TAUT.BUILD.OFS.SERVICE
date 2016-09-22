@@ -1,0 +1,1023 @@
+*-----------------------------------------------------------------------------
+* <Rating>5073</Rating>
+*-----------------------------------------------------------------------------
+*-----------------------------------------------------------------------------
+
+    SUBROUTINE TAUT.BUILD.OFS.SERVICE
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_F.SPF
+    $INSERT I_F.JOURNAL
+    $INSERT I_F.COMPANY
+    $INSERT I_F.FILE.CONTROL
+    $INSERT I_F.STANDARD.SELECTION
+    $INSERT I_F.VERSION
+    $INSERT I_EB.TRANS.COMMON
+    $INSERT I_IO.EQUATE
+    $INSERT I_F.ACCOUNT
+    $INSERT I_F.FOREX
+    $INSERT I_F.LD.LOANS.AND.DEPOSITS
+    $INSERT I_F.LD.SCHEDULE.DEFINE
+    $INSERT I_F.MM.MONEY.MARKET
+    $INSERT I_F.FD.FID.ORDER
+    $INSERT I_F.FD.FIDUCIARY
+    $INSERT I_F.SEC.TRADE
+    $INSERT I_GTS.COMMON
+    $INSERT I_F.LOCKING
+    $INSERT I_F.EB.PHANTOM
+    $INSERT I_F.USER
+    $INCLUDE TAUT.BP I_F.TAUT.PARAMETER
+    $INCLUDE TAUT.BP I_F.TAUT.APPL.DETAILS
+
+    GOSUB OPEN.FILES
+    GOSUB READ.PARAMETER
+    GOSUB OPEN.TAUT.LOG.FILE
+
+    SEL.CMD = 'SELECT ':FN.STORE.SRC.JNL
+    CALL EB.READLIST(SEL.CMD, SEL.LIST, '', NO.OF.REC, Y.CODE)
+
+    LOOP
+        REMOVE Y.MASTER.JNL.ID FROM SEL.LIST SETTING Y.JNL.POS
+    WHILE Y.MASTER.JNL.ID:Y.JNL.POS
+
+        GOSUB RESET.VARS
+        GOSUB LOAD.VARIABLES
+        GOSUB SKIP.BUILD.OFS
+        IF BUILD.OFS THEN
+            GOSUB BUILD.OFS.STRING
+            CALL F.WRITE(FN.PROCESSED.SRC.JNL,Y.MASTER.JNL.ID,R.JNL.REC)
+            CALL F.DELETE(FN.STORE.SRC.JNL,Y.MASTER.JNL.ID)
+        END
+
+    REPEAT
+    RETURN
+
+OPEN.FILES:
+*-----------
+
+    FN.USER = 'F.USER'
+    F.USER = ''
+    CALL OPF(FN.USER,F.USER)
+
+    FN.PGM.FILE = 'F.PGM.FILE'
+    F.PGM.FILE = ''
+    CALL OPF(FN.PGM.FILE, F.PGM.FILE)
+
+    FN.VERSION = 'F.VERSION'
+    F.VERSION = ''
+    CALL OPF(FN.VERSION,F.VERSION)
+
+    FN.STANDARD.SELECTION = 'F.STANDARD.SELECTION'
+    F.STANDARD.SELECTION = ''
+    CALL OPF(FN.STANDARD.SELECTION,F.STANDARD.SELECTION)
+
+    FN.FC = 'F.FILE.CONTROL'
+    F.FC = ''
+    CALL OPF(FN.FC,F.FC)
+
+    FN.COMPANY = 'F.COMPANY'
+    F.COMPANY = ''
+    CALL OPF(FN.COMPANY,F.COMPANY)
+
+    FN.TAUT.PARAM = 'F.TAUT.PARAMETER'
+    F.TAUT.PARAM = ''
+    CALL OPF(FN.TAUT.PARAM,F.TAUT.PARAM)
+
+    FN.TAUT.APP.DET = 'F.TAUT.APPL.DETAILS'
+    F.TAUT.APP.DET = ''
+    CALL OPF(FN.TAUT.APP.DET,F.TAUT.APP.DET)
+
+    FN.ACCOUNT = 'F.ACCOUNT'
+    F.ACCOUNT = ''
+    CALL OPF(FN.ACCOUNT, F.ACCOUNT)
+
+    OPEN "&SAVEDLISTS&" TO F.SAVE ELSE NULL
+
+    RETURN
+
+READ.PARAMETER:
+*---------------
+    R.TAUT.PARAM = ''
+    TAUT.PARAM.READ.ERR = ''
+    CALL F.READ(FN.TAUT.PARAM,'SYSTEM',R.TAUT.PARAM,F.TAUT.PARAM,TAUT.PARAM.READ.ERR)
+
+    FN.STORE.SRC.OFS = R.TAUT.PARAM<TAUT.STORE.FWD.QUEUE>
+    F.STORE.SRC.OFS = ''
+    CALL OPF(FN.STORE.SRC.OFS,F.STORE.SRC.OFS)
+
+    FN.STORE.SRC.JNL = R.TAUT.PARAM<TAUT.STORE.JNL>
+    F.STORE.SRC.JNL = ''
+    CALL OPF(FN.STORE.SRC.JNL,F.STORE.SRC.JNL)
+
+
+    FN.PROCESSED.SRC.JNL = R.TAUT.PARAM<TAUT.PROCESSED.JNL>
+    F.PROCESSED.SRC.JNL =  ''
+    CALL OPF(FN.PROCESSED.SRC.JNL,F.PROCESSED.SRC.JNL)
+
+    FN.STORE.TXNS= R.TAUT.PARAM<TAUT.STORE.TXNS>
+    F.STORE.TXNS= ''
+    CALL OPF(FN.STORE.TXNS,F.STORE.TXNS)
+
+    DATA.SYNC = R.TAUT.PARAM<TAUT.DATA.SYNC>
+
+    R.TAUT.APP.DET = ''
+    TAUT.APP.DET.READ.ERR = ''
+    CALL F.READ(FN.TAUT.APP.DET,'SYSTEM',R.TAUT.APP.DET,F.TAUT.APP.DET,TAUT.APP.DET.READ.ERR)
+
+    GOSUB GET.PARAMETER.DETAILS
+
+    RETURN
+
+GET.PARAMETER.DETAILS:
+**********************
+
+    TRANS.TYPE = R.TAUT.PARAM<TAUT.TRANS.TYPE>
+    EXCL.FUNCTION = R.TAUT.PARAM<TAUT.EXCL.FUNCTION>
+    EXCL.VERSION = R.TAUT.PARAM<TAUT.EXCL.VERSION>
+    EXCL.APPL = R.TAUT.PARAM<TAUT.EXCL.APPL>
+    EXCL.USER = R.TAUT.PARAM<TAUT.EXCL.USER>
+    EXCL.COMPANY = R.TAUT.PARAM<TAUT.EXCL.COMPANY>
+    TGT.T24.RELEASE = R.TAUT.PARAM<TAUT.TGT.T24.REL>
+    SAMPLE.CNTR = R.TAUT.PARAM<TAUT.SAMPLE.CNTR>
+    PRD.ONLINE.JNL = R.TAUT.PARAM<TAUT.PRD.ONLINE.JNL>
+    JNL.FREQ = R.TAUT.PARAM<TAUT.ONLINE.JNL.FREQ>
+    OFS.USER = R.TAUT.PARAM<TAUT.TGT.OFS.USER>
+    J.USER.PASSWORD = R.TAUT.PARAM<TAUT.TGT.OFS.PASSWD>
+    IF J.USER.PASSWORD EQ '' THEN
+        J.USER.PASSWORD = "Welcome2016$"
+    END
+
+    START.JNL = R.TAUT.PARAM<TAUT.START.JNL>
+    END.JNL = R.TAUT.PARAM<TAUT.END.JNL>
+    OFS.CONV.RTN = R.TAUT.PARAM<TAUT.OFS.CONV.RTN>
+    UPDATE.RESP = R.TAUT.PARAM<TAUT.UPDATE.RESP>
+*--- Open the main Source File from which this routine should produce OFS messages
+    SOURCE.FILE = R.TAUT.PARAM<TAUT.SOURCE.FILE>
+    DATA.SYNC = R.TAUT.PARAM<TAUT.DATA.SYNC>
+    STORE.TXNS = R.TAUT.PARAM<TAUT.STORE.TXNS>
+
+*--- Check for special processing Parameters
+
+    SPE.FILE.NAME = R.TAUT.APP.DET<TAUT.FILE.NAME>
+    OFS.PRE.CONV.RTN = R.TAUT.APP.DET<TAUT.PRE.OFS.RTN>
+    OFS.POST.CONV.RTN = R.TAUT.APP.DET<TAUT.POST.OFS.RTN>
+    MESSAGE.SYNTAX = R.TAUT.APP.DET<TAUT.MESSAGE.SYNTAX>
+    DELIM = R.TAUT.APP.DET<TAUT.MSG.DELIMITER>
+    POST.MESSAGE = R.TAUT.APP.DET<TAUT.POST.MESSAGE>
+
+    RETURN
+
+OPEN.TAUT.LOG.FILE:
+*******************
+    T.LOG.LEVEL = R.TAUT.PARAM<TAUT.LOG.LEVEL>
+    IF T.LOG.LEVEL NE 'NONE' THEN
+        LOG.FILE = R.TAUT.PARAM<TAUT.LOG.FILE>
+        F.TAUT.LOG = ''
+        OPEN LOG.FILE TO F.TAUT.LOG ELSE
+            LOG.LEVEL = 1     ;* Fatal
+            TAUT.TEXT = 'Cannot open the LOG file: ':LOG.FILE
+            GOSUB UPDATE.TAUT.LOG
+            RETURN
+        END
+    END
+
+    IF TAUT.PARAM.READ.ERR OR R.TAUT.PARAM EQ '' THEN
+        LOG.LEVEL = 1         ;* Fatal
+        TAUT.TEXT = 'TAUT.PARAMETER RECORD MISSING'
+        GOSUB UPDATE.TAUT.LOG
+        RETURN
+    END
+
+    IF TAUT.APP.DET.READ.ERR OR R.TAUT.APP.DET EQ '' THEN
+        LOG.LEVEL = 3         ;* Info
+        TAUT.TEXT = 'TAUT.APPL.DETAILS RECORD MISSING'
+        GOSUB UPDATE.TAUT.LOG
+    END
+
+    RETURN
+
+LOAD.VARIABLES:
+*--------------
+    APPL.NAME = FIELD(Y.MASTER.JNL.ID,'_',2)
+    J.APPLICATION = APPL.NAME :',':FIELD(Y.MASTER.JNL.ID,'_',5)
+    J.TXN.REF = FIELD(Y.MASTER.JNL.ID,'_',3)
+    J.FUNCTION = FIELD(Y.MASTER.JNL.ID,'_',4)
+    J.USER = FIELD(Y.MASTER.JNL.ID,'_',6)
+    J.COMPANY = FIELD(Y.MASTER.JNL.ID,'_',7)
+
+    CALL F.READ(FN.USER,J.USER,R.USER.REC,F.USER,'')
+    J.USER = R.USER.REC<EB.USE.SIGN.ON.NAME>
+
+
+    CALL F.READ(FN.STORE.SRC.JNL,Y.MASTER.JNL.ID,R.JNL.REC,F.STORE.SRC.JNL,JNL.REC.ERROR)
+    CALL F.READ(FN.STORE.SRC.OFS,Y.MASTER.JNL.ID,R.JNL.SRC,F.STORE.SRC.OFS,JNL.SRC.ERROR)
+    CALL F.READ(FN.STORE.TXNS,Y.MASTER.JNL.ID,R.STORE.TXNS,F.STORE.TXNS,SRC.JNL.ERR)
+
+    IF NOT(R.STORE.TXNS) THEN
+        FN.APPL = 'F.':APPL.NAME
+        F.APPL = ''
+        CALL OPF(FN.APPL, F.APPL)
+        CALL F.READ(FN.APPL, J.TXN.REF, APPL.REC, F.APPL, Y.APP.ERR)
+    END ELSE
+        APPL.REC = RAISE(R.STORE.TXNS<1>)         ;* Always process the first String. except AA .
+    END
+
+    CALL EB.GET.FIELD.DEFINITIONS(APPL.NAME,'LOAD')
+    CORE.FIELD.NOS = V - 9
+    CURR.NO.FIELD  = V-7
+
+    RETURN
+
+SKIP.BUILD.OFS:
+***************
+    BUILD.OFS = 1
+
+    FIND APPL.NAME IN EXCL.APPL SETTING FM.POS,VM.POS,SM.POS THEN
+        BUILD.OFS = ''
+        LOG.LEVEL = 3         ;* Info
+        TAUT.TEXT = 'SCAN.JOURNAL: Journal Skipped Because Application Excluded: ':JOURNAL.ID
+        GOSUB UPDATE.TAUT.LOG
+        RETURN
+    END
+
+    FIND J.APPLICATION IN EXCL.VERSION SETTING FM.POS,VM.POS,SM.POS THEN
+        BUILD.OFS = ''
+        LOG.LEVEL = 3         ;* Info
+        TAUT.TEXT = 'SCAN.JOURNAL: Journal Skipped Because VERSION Excluded: ':JOURNAL.ID
+        GOSUB UPDATE.TAUT.LOG
+        RETURN
+    END
+
+    FIND J.FUNCTION IN EXCL.FUNCTION SETTING FM.POS,VM.POS,SM.POS THEN
+        BUILD.OFS = ''
+        LOG.LEVEL = 3         ;* Info
+        TAUT.TEXT = 'SCAN.JOURNAL: Journal Skipped Because Function Excluded: ':JOURNAL.ID
+        GOSUB UPDATE.TAUT.LOG
+        RETURN
+    END
+
+    FIND J.COMPANY IN EXCL.COMPANY SETTING FM.POS,VM.POS,SM.POS THEN
+        BUILD.OFS = ''
+        LOG.LEVEL = 3         ;* Info
+        TAUT.TEXT = 'SCAN.JOURNAL: Journal Skipped Because Company Excluded: ':JOURNAL.ID
+        GOSUB UPDATE.TAUT.LOG
+        RETURN
+    END
+
+    FIND J.USER IN EXCL.USER SETTING FM.POS,VM.POS,SM.POS THEN
+        BUILD.OFS = ''
+        LOG.LEVEL = 3         ;* Info
+        TAUT.TEXT = 'SCAN.JOURNAL: Journal Skipped Because User Excluded: ':JOURNAL.ID
+        GOSUB UPDATE.TAUT.LOG
+        RETURN
+    END
+
+    IF J.FUNCTION EQ '' THEN
+        LOG.LEVEL = 2         ;* Warning
+        TAUT.TEXT = 'Back End JOURNAL.UPDATE problem: ':JOURNAL.ID
+        GOSUB UPDATE.TAUT.LOG
+        RETURN      ;* This is to avoid Back End JOURNAL.UPDATE
+    END
+
+    RETURN
+
+
+RESET.VARS:
+***********
+    ESC.KEY.WORD = CHARX(27)
+    PRIMARY.TXN = ''
+    OFS.STRING = ''
+    MULTIVAL.NO = ''
+    SUBVAL.NO = ''
+    MULTI.FLAG = ''
+    OFS.DATA = ''
+    DATA.PART = ''
+    VERSION.REC = ''
+    J.VERSION = ''
+    OFS.HEADER = ''
+    VERSION.REC = ''
+    OFS.SEPERATOR = ','
+    SPECIAL.FLAG = ''
+    MULTI.VALUE.NO = ''
+    SUB.VALUE.NO = ''
+    SPECIAL.INDICATOR.FLAG = ''
+    JOURNAL.ID = 0
+    TAUT.ERROR = ''
+    TAUT.ERROR.MSG = ''
+    LOG.FOUND = 'Y'
+    JOURNAL.LIST = ''
+    START.JNL = 0
+    END.JNL = ''
+    JOURNAL.ID.LAST = 0
+    JNL.PROCESSED.CNT = 0
+    OFS.STRING.CNT = 0
+    APPL.REC = ''
+
+    J.APPLICATION = '' ;  J.VERSION = '' ; J.FUNCTION = '' ; APPL.NAME = '' ; FILE.NAME = ''
+    J.COMPANY = '' ; APPL.HIS.REC = '' ; J.TXN.REF = '' ; J.FWT = '' ; J.FWC = '' ; APP.FOUND.ERROR = ''
+
+    RETURN
+
+BUILD.OFS.STRING:
+*****************
+    IF J.TXN.REF[1,2] EQ 'AA' THEN
+        CALL GET.AA.OFS(J.TXN.REF,OFS.STRING,Y.MASTER.JNL.ID,Y.ERR)
+        IF Y.ERR THEN
+            LOG.LEVEL = 1     ;*Fatal
+            TAUT.TEXT = "Error on activity reference ID "
+            GOSUB UPDATE.TAUT.LOG
+            RETURN
+        END ELSE
+            GOSUB WRITE.OFS.IN.QUEUE
+        END
+        RETURN
+    END ELSE
+        CALL F.READ(FN.ACCOUNT, J.TXN.REF, R.ACCOUNT, F.ACCOUNT, Y.AC.ERR)
+        Y.ARR.ID = R.ACCOUNT<AC.ARRANGEMENT.ID>
+        IF Y.ARR.ID THEN
+            CALL GET.AA.OFS(Y.ARR.ID,OFS.STRING,Y.MASTER.JNL.ID, Y.ERR)
+            IF Y.ERR THEN
+                LOG.LEVEL = 1 ;*Fatal
+                TAUT.TEXT = "Error on activity reference ID "
+                GOSUB UPDATE.TAUT.LOG
+                RETURN
+            END ELSE
+                GOSUB WRITE.OFS.IN.QUEUE
+            END
+            RETURN
+        END
+    END
+    VER.POS = INDEX(J.APPLICATION,',',1)
+    J.VERSION = FIELD(J.APPLICATION,',',2)
+
+
+*    IF NOT(VER.POS) THEN
+*        OFS.MSG.CREATED = 0
+*        LOG.LEVEL = 2         ;*Warning
+*        TAUT.TEXT = 'Transaction Directly updated in Application without VERSION: ':JOURNAL.ID
+*        GOSUB UPDATE.TAUT.LOG
+*        RETURN      ;* This condition has been checked because OFS will not allow direct Application update
+*    END
+
+    GOSUB FORM.OFS.HEADER
+
+    IF NOT(J.FUNCTION = 'R' OR J.FUNCTION = 'D' OR J.FUNCTION = 'A') THEN       ;* If the function is DELETE, AUTHORISE , REVERSE just pass the header which is enough Reverse the transaction other wise process the transaction.
+        GOSUB OPEN.APPLICATION
+        GOSUB GET.APPLICATION.REC
+        IF APP.FOUND.ERROR THEN
+            RETURN
+        END
+        GOSUB MATCH.FIELD
+        IF APPL.NAME = 'LD.LOANS.AND.DEPOSITS' AND APPL.REC<LD.DEFINE.SCHEDS> = 'YES' AND APPL.REC<LD.AUTO.SCHEDS> = 'NO' THEN
+            OFS.DATA := '//'
+            IF J.FUNCTION = 'I' THEN
+                PREFIX = APPL.REC<LD.CURRENCY>    ;* This will be the Loan Currency.
+                J.APPLICATION = 'LD.SCHEDULE.DEFINE,':J.VERSION
+                SPECIAL.FLAG = 1
+                OFS.SEPERATOR = ''
+                GOSUB OPEN.APPLICATION
+                GOSUB GET.APPLICATION.REC
+                GOSUB MATCH.FIELD
+            END
+        END
+    END
+
+    GOSUB WRITE.OFS.STRING
+    RETURN
+
+OPEN.APPLICATION:
+*****************
+    APPL.VERSION = ''
+    VERSION.REC = ''
+    F.FILE.NAME = ''
+    FILE.RECORD = ''
+    NOCHANGE.FLAG = ''
+    TAUT.ERROR = ''
+    IF VER.POS THEN
+        CALL F.READ(FN.VERSION,J.APPLICATION,VERSION.REC,F.VERSION,ERR1)
+    END
+    FC.ERR = ''
+    CALL F.READ(FN.FC,APPL.NAME,FC.REC,F.FC,FC.ERR)
+    IF FC.ERR THEN
+        LOG.LEVEL = 1         ;* Fatal
+        TAUT.TEXT = 'Unable to Read File control for ':APPL.NAME
+        GOSUB UPDATE.TAUT.LOG
+        RETURN
+    END
+
+    FC.CLASSIFY = FC.REC<EB.FILE.CONTROL.CLASS>
+    FC.SUFFIXES = FC.REC<EB.FILE.CONTROL.SUFFIXES>
+    BEGIN CASE
+    CASE FC.CLASSIFY = 'INT'
+        FILE.NAME = 'F.':APPL.NAME
+
+    CASE FC.CLASSIFY = 'CUS' OR FC.CLASSIFY = 'FTD' OR FC.CLASSIFY = 'FTF' OR FC.CLASSIFY = 'CST'
+        FILE.NAME = 'FBNK.':APPL.NAME
+
+    CASE FC.CLASSIFY = 'FIN'
+        READ COMPANY.REC FROM F.COMPANY,J.COMPANY THEN
+            MNEMONIC = COMPANY.REC<EB.COM.FINANCIAL.MNE>
+            FILE.NAME = 'F': MNEMONIC:'.':APPL.NAME
+        END
+
+    CASE FC.CLASSIFY = 'CCY'
+        READ COMPANY.REC FROM F.COMPANY,J.COMPANY THEN
+            MNEMONIC = COMPANY.REC<EB.COM.CURRENCY.MNEMONIC>
+            FILE.NAME = 'F': MNEMONIC:'.':APPL.NAME
+        END
+
+    CASE FC.CLASSIFY = 'NOS'
+        READ COMPANY.REC FROM F.COMPANY,J.COMPANY THEN
+            MNEMONIC = COMPANY.REC<EB.COM.NOSTRO.MNEMONIC>
+            FILE.NAME = 'F': MNEMONIC:'.':APPL.NAME
+        END
+
+    CASE 1
+        READ COMPANY.REC FROM F.COMPANY,J.COMPANY THEN
+            MNEMONIC = COMPANY.REC<EB.COM.MNEMONIC>
+            FILE.NAME = 'F': MNEMONIC:'.':APPL.NAME
+        END ELSE
+            LOG.LEVEL = 1     ;* Fatal
+            TAUT.TEXT = 'Cannot able to read COMPANY ': J.COMPANY
+            GOSUB UPDATE.TAUT.LOG
+            RETURN
+        END
+    END CASE
+
+    OPEN "DICT",FILE.NAME TO F.DICT.FILE ELSE
+        LOG.LEVEL = 1         ;* Fatal
+        TAUT.TEXT = 'Cannot open Dictionay file for ':FILE.NAME       ;* Used to pick up the field no in future.
+        GOSUB UPDATE.TAUT.LOG
+        RETURN
+    END
+
+    OPEN FILE.NAME TO F.FILE.NAME ELSE
+        LOG.LEVEL = 1         ;* Fatal
+        TAUT.TEXT = 'Cannot open the file ':FILE.NAME
+        GOSUB UPDATE.TAUT.LOG
+        RETURN
+    END
+
+    RETURN
+
+GET.APPLICATION.REC:
+********************
+    APP.FOUND = 1
+    AUTH.VERSION = ''
+
+    IF VERSION.REC<EB.VER.NO.OF.AUTH> = 0 THEN
+        AUTH.VERSION = 1
+    END
+
+    FIELD.POS = 'CURR.NO'
+    CALL EB.GET.APPL.FIELD(APPL.NAME,FIELD.POS,APPL.SS,ERR.MSG)
+    Y.CURR.NO = APPL.REC<FIELD.POS>
+    IF Y.CURR.NO GT "1" AND INDEX(FC.SUFFIXES,'$HIS',1) THEN
+        APPL.HIS.REC = ''
+        FN.APPLN.HIS = FILE.NAME:'$HIS'
+        F.APPLN.HIS = ''
+        CALL OPF(FN.APPLN.HIS,F.APPLN.HIS)
+        CALL EB.READ.HISTORY.REC(F.APPLN.HIS, J.TXN.REF, APPL.HIS.REC, Y.HIS.ERR)
+    END
+
+    IF APPL.REC THEN
+* ---  Special check for the forex transactions  .. .
+        SWAP.FLAG = ''
+
+        IF APPL.NAME = 'FOREX' AND APPL.REC<FX.DEAL.TYPE> = 'SW' THEN
+            SWAP.FLAG = 1
+
+* --- This contract is identified to the a Forex Swap contract. Need to form two Legs....
+
+            FIRST.LEG.REFNO= APPL.REC<FX.SWAP.REF.NO,2>
+            SECOND.LEG.REFNO = J.TXN.REF
+            SECOND.LEG.REC = APPL.REC
+            J.TXN.REF = FIRST.LEG.REFNO
+            APPL.REC = ''
+			APPL.REC = RAISE(R.STORE.TXNS<2>)  
+
+*            IF AUTH.VERSION  = 1 THEN
+*                J.FUNCTION = 'I'
+*            END
+        END
+    END ELSE
+        APP.FOUND.ERROR = 1
+        LOG.LEVEL = 3         ;* Warning
+        TAUT.TEXT = "Application Not found in FWT - JOURNAL: ":JOURNAL.ID
+        GOSUB UPDATE.TAUT.LOG
+    END
+
+    RETURN
+
+FORM.OFS.HEADER:
+******************
+    GTSMODE = '1'
+    IF VERSION.REC<EB.VER.NO.OF.AUTH> THEN
+		NO.OF.AUTH = VERSION.REC<EB.VER.NO.OF.AUTH>
+	END
+	
+    OFSACTION  = ''
+    SIMULATION.MODE = ''
+    SIMULATION.REF =  ''
+    OFS.HEADER = ""
+    OFS.HEADER = APPL.NAME:',':J.VERSION:"/"
+    OFS.HEADER := J.FUNCTION:"/"
+    OFS.HEADER := 'PROCESS':"/"
+    OFS.HEADER := GTSMODE:"/"
+    OFS.HEADER := NO.OF.AUTH:"/"
+    OFS.HEADER := OFSACTION:",":J.USER :"/": J.USER.PASSWORD
+    OFS.HEADER := "/":J.COMPANY:"/"
+    OFS.HEADER := "///":SIMULATION.MODE:"/"       ;* simualtion mode in the 7th sub component of the ofs message
+    OFS.HEADER := SIMULATION.REF:","    ;* 8th sub component of the user part of the ofs message
+
+    BEGIN CASE
+    CASE APPL.NAME = 'DATA.CAPTURE'
+        OFS.HEADER := J.TXN.REF[1,7]
+    CASE APPL.NAME = 'LD.LOANS.AND.DEPOSITS' AND J.FUNCTION = 'A' AND APPL.REC<LD.CONTRACT.TYPE> = 'AMORT'
+        OFS.HEADER := J.TXN.REF:'//'
+    CASE 1
+        IF J.FUNCTION EQ 'R' THEN
+            OFS.HEADER := J.TXN.REF
+        END ELSE
+            OFS.HEADER := ''
+        END
+    END CASE
+
+    RETURN
+
+MATCH.FIELD:
+************
+* --- Take each and every value in the application record and match it with the
+* --- correponding field name. Call the application ...to populate all COMMON vars
+* --- To check for the NOCHANGE flags and set the flag accordingly .
+
+    NOCHANGE.FLAG = ''
+    IF J.FUNCTION EQ 'A' AND APPL.REC<CURR.NO.FIELD> GT 1 THEN
+        NOCHANGE.FLAG = 1
+    END
+
+* --- Special condition check for FD.FID.ORDER to check if POOLING.STATUS AND POOLING.GROUP should be inputtable of noninputtabl
+
+    BEGIN CASE
+
+    CASE APPLICATION[1,12] = 'FD.FID.ORDER'
+        IF APPL.REC<FD.ORD.POOLING.STATUS> = 'OPEN' THEN
+            T(FD.ORD.POOLING.STATUS)<3> = 'NOINPUT'
+            T(FD.ORD.POOLED.GROUP)<3> = 'NOINPUT'
+        END
+        IF NOT(APPL.REC<FD.ORD.POOLING> = 'MANUAL') THEN
+            T(FD.ORD.POOLED.GROUP)<3> = 'NOINPUT'
+        END
+    CASE APPLICATION[1,21] = 'LD.LOANS.AND.DEPOSITS'
+        IF NOT(APPL.REC<LD.INT.RATE.TYPE> = 'S') THEN
+            T(LD.TOT.INTEREST.AMT)<3> = 'NOINPUT'
+        END
+        T(LD.CONTRACT.GRP)<3> = 'NOINPUT'         ;* Following condition is set assuming APPLICATION.GEN.CONDITION record will be set in the client sight.
+    CASE APPLICATION[1,15] = "MM.MONEY.MARKET"
+        IF NOT(APPL.REC<LD.INT.RATE.TYPE> = 'S') THEN
+            T(MM.TOT.INTEREST.AMT)<3> = 'NOINPUT'
+        END
+    CASE APPLICATION[1,12]="FD.FIDUCIARY"
+        IF NOT(APPL.REC<FD.MANUAL.INTEREST> = 'Y') THEN
+            T(FD.INTEREST.RATE)<3> = "NOINPUT"
+        END
+    END CASE
+
+* First read the version and find whether field numbers are specified then do a seperate processing else
+* , We need to scan thru the whole template/Standard selection.
+* Version record is opened in the begining itself.
+*      APPL.VERSION = APPLICATION : ",":J.VERSION
+
+    IF VERSION.REC<EB.VER.FIELD.NO,1> <> '' THEN  ;* This is to take care of , VERSION
+
+* --- Check if there is Associated version and populate these fields also in the VERSION.REC.
+
+        GOSUB HANDLE.VERSION
+
+        NO.ASSOC.VERSION = ''
+        NO.ASSOC.VERSION = DCOUNT(VERSION.REC<EB.VER.ASSOC.VERSION>,@VM)
+        ASSOC.VERSION.LIST = VERSION.REC<EB.VER.ASSOC.VERSION>
+        IF NO.ASSOC.VERSION THEN CONVERT @VM TO @FM IN ASSOC.VERSION.LIST
+        ASSOC.I = 0
+        LOOP
+        WHILE NO.ASSOC.VERSION
+            ASSOC.I += 1
+            VERSION.REC = ''
+            ERR1 = ''
+            CALL F.READ(FN.VERSION,TRIM(ASSOC.VERSION.LIST<ASSOC.I>),VERSION.REC,F.VERSION,ERR1)
+            IF ERR1 THEN
+                LOG.LEVEL = 1 ;* Fatal
+                TAUT.TEXT = 'Cannot read associated version ':ASSOC.VERSION.LIST<ASSOC.I>
+                GOSUB UPDATE.TAUT.LOG
+                RETURN
+            END
+            GOSUB HANDLE.VERSION
+            NO.ASSOC.VERSION -= 1
+        REPEAT
+        RETURN
+    END ELSE
+* --- The following lines are to support , VERSION. Since there will not be any field no in , VERSION we need
+* --- Scan the entire application to get the field names for OFS conversion
+
+* --- T and N array available for us access required information.
+
+        LAST.FIELD = V - 9
+        CURR.FIELD = 0
+
+* --- OFS string formation .  Scan thru the entire template to filter the filed name and version.
+
+        LOOP
+            CURR.FIELD += 1
+        WHILE CURR.FIELD <= LAST.FIELD
+            IF T(CURR.FIELD)<3> = 'NOINPUT' OR T(CURR.FIELD)<3> = 'EXTERN' OR T(CURR.FIELD) = 'NV.EXTERN' THEN
+                CONTINUE
+            END
+            MULTIVAL.NO = ''
+            SUBVAL.NO = ''
+            MULTI.FLAG = ''
+            FIELD.NAME = F(CURR.FIELD)
+* --- Get the Actual field name from the F array .
+* --- There are various conditions to be handled.
+            GOSUB GET.ACTUAL.FIELD.NAME
+* In G12.2.06 field called BR.TRADE.TIME has been added which was later removed in G13.2.06 as it is not necessary
+* Hence hardcoding to skip this field.
+            IF FIELD.NAME = "BR.TRADE.TIME" AND J.APPLICATION[1,9] = "SEC.TRADE" THEN
+                CONTINUE
+            END
+            IF MULTI.FLAG THEN
+                GOSUB SPLIT.VALUES
+            END ELSE
+                MULTIVAL.NO = '1'
+                SUBVAL.NO = '1'
+                FIELD.VALUE = APPL.REC<CURR.FIELD>
+                IF TRIM(FIELD.VALUE)= '' THEN CONTINUE
+                GOSUB FORM.OFS.STRING
+            END
+
+        REPEAT
+    END
+    RETURN
+
+GET.ACTUAL.FIELD.NAME:
+**********************
+* --- If some body uses a odd way of declaring a variable then there is every chance of challenging this record.
+
+    ACTUAL.FIELD.NAME = FIELD.NAME
+    MULTI.FLAG = ''
+    IF ACTUAL.FIELD.NAME[1,2] = 'XX' THEN
+        MULTI.FLAG = 'M'
+        ACTUAL.FIELD.NAME = ACTUAL.FIELD.NAME[4,LEN(ACTUAL.FIELD.NAME)+1]
+        IF ACTUAL.FIELD.NAME[1,2] = 'XX' OR ACTUAL.FIELD.NAME[1,2] = 'LL' THEN
+            IF ACTUAL.FIELD.NAME[1,2] = 'LL' THEN
+                ACTUAL.FIELD.NAME = ACTUAL.FIELD.NAME[4,LEN(ACTUAL.FIELD.NAME)+1]
+            END
+            IF ACTUAL.FIELD.NAME[1,2] = 'XX' THEN
+                MULTI.FLAG = 'S'
+                ACTUAL.FIELD.NAME = ACTUAL.FIELD.NAME[4,LEN(ACTUAL.FIELD.NAME)+1]
+                IF ACTUAL.FIELD.NAME[1,2] = 'LL' THEN
+                    ACTUAL.FIELD.NAME = ACTUAL.FIELD.NAME[4,LEN(ACTUAL.FIELD.NAME)+1]
+                END
+            END
+        END
+
+    END
+    ACTUAL.FIELD.NAME = TRIM(ACTUAL.FIELD.NAME,'.','B')
+    FIELD.NAME = ACTUAL.FIELD.NAME
+* Special case. The I.S.I.N field has a trailing '.'(dot0. Since this sub routine trims it we add it back.
+    IF FIELD.NAME = 'I.S.I.N' THEN
+
+        FIELD.NAME := '.'
+    END
+
+    RETURN
+
+WRITE.OFS.STRING:
+*****************
+    IF OFS.DATA THEN
+        IF (OFS.DATA[1,1] NE ",") THEN
+            OFS.DATA = ',':OFS.DATA
+        END
+    END
+    OFS.STRING = OFS.HEADER:OFS.DATA
+
+* For SEC.TRADE the TRADE currency is not getting defaulted automatically
+* , So this part of code is added to make sure that the TRADE.CCY is appended
+* to the OFS string incase the VERSION does not have the TRADE.CCY field.
+    IF FIELD(OFS.STRING,',',1) = "SEC.TRADE" THEN
+        SEC.TRADE.STRING = OFS.STRING
+        CONVERT ',' TO @FM IN SEC.TRADE.STRING
+        FIND "TRADE.CCY" IN SEC.TRADE.STRING SETTING X ELSE
+            OFS.STRING := ',TRADE.DATE::=':APPL.REC<SC.SBS.TRADE.CCY>
+        END
+        SEC.TRADE.STRING = ''
+    END
+    GOSUB WRITE.OFS.IN.QUEUE
+
+    RETURN
+
+WRITE.OFS.IN.QUEUE:
+*-----------------
+
+    IF DATA.SYNC EQ 'OFFLINE' THEN
+        IF R.JNL.SRC THEN
+            R.JNL.SRC := FM : OFS.STRING
+            CALL F.WRITE(FN.STORE.SRC.OFS,Y.MASTER.JNL.ID,R.JNL.SRC)
+        END ELSE
+            R.JNL.SRC = OFS.STRING
+            CALL F.WRITE(FN.STORE.SRC.OFS,Y.MASTER.JNL.ID,R.JNL.SRC)
+        END
+
+*    END ELSE
+***        CALL TAUT.TRANSPORT.PROTOCOL(OFS.STRING,TRANS.TYPE,UPDATE.RESP)
+    END
+
+    LOG.LEVEL = 3   ;* Info
+    TAUT.TEXT = 'WRITE.OFS.STRING: OFS Message generated ':OFS.STRING
+    GOSUB UPDATE.TAUT.LOG
+
+    OFS.DATA.BAK = ''
+    OFS.STRING = ''
+    OFS.HEADER = ''
+    OFS.DATA = ''
+    OFS.ID = ''
+    SPECIAL.FLAG = ''
+    PREFIX = ''
+
+    RETURN
+
+HANDLE.VERSION:
+***************
+    VR.FIELD.COUNT = DCOUNT(VERSION.REC<EB.VER.FIELD.NO>,@VM)
+    VR.I = 0
+    LOOP
+        VR.I += 1   ;*
+    WHILE VR.I <= VR.FIELD.COUNT
+        GOSUB INITIALISE.VERSION.SETTINGS
+        VR.FIELD.NAME = TRIM(VERSION.REC<EB.VER.FIELD.NO,VR.I>)
+        VR.FIELD.EXPANSION = TRIM(VERSION.REC<EB.VER.EXPANSION,VR.I>)
+
+        IF VR.FIELD.NAME = "*" THEN     ;* This is to avoid comment lines in VERSION
+            CONTINUE
+        END
+
+        VR.ACTUAL.FIELD = VR.FIELD.NAME
+
+* --- Check for the multi valued set.
+
+        IF NOT(NUM(VR.FIELD.NAME)) THEN
+
+* The second check VR.FIELD.EXPANSION is added to make sure we do the special case of
+* handling the  particular multivalue set when FIELD.EXPANSION is set to N.
+
+            IF INDEX(VR.FIELD.NAME,'-',1) THEN
+                SPECIAL.INDICATOR.FLAG = 1
+                MULTI.VALUE.NO = FIELD(VR.FIELD.NAME,'-',2)
+                VR.FIELD.NAME = FIELD(VR.FIELD.NAME,'-',1)
+                IF INDEX(MULTI.VALUE.NO,'.',1) THEN
+                    MULTI.VALUE.NO = FIELD(MULTI.VALUE.NO,'.',1)
+                    SUB.VALUE.NO = FIELD(MULTI.VALUE.NO,'.',2)
+                END
+                IF NOT(VR.FIELD.EXPANSION = 'N') AND NOT(VR.FIELD.NAME[1,9] = 'LOCAL.REF') THEN
+                    SPECIAL.INDICATOR.FLAG = ''
+
+                    IF MULTI.VALUE.NO THEN
+                        MULTI.FLAG = 'M'
+                        IF SUB.VALUE.NO THEN
+                            MULTI.FLAG = 'S'
+                        END
+                    END
+                END
+            END
+
+            READ DICT.REC FROM F.DICT.FILE,VR.FIELD.NAME ELSE
+                LOG.LEVEL = 1 ;*Fatal
+                TAUT.TEXT = "Cannot read Dictionary for field ":VR.FIELD.NAME
+                GOSUB UPDATE.TAUT.LOG
+                RETURN
+            END
+            VR.FIELD.POS = DICT.REC<2>  ;* Get the exact position of the field....
+
+            CURR.FIELD = VR.FIELD.POS
+            FIELD.NAME = VR.FIELD.NAME
+        END ELSE
+            VR.FIELD.POS = VR.FIELD.NAME
+            IF INDEX(VR.FIELD.NAME,'.',1) THEN    ;* If a Version has got FIELD.NO as Numbeers then handle them also
+                VR.FIELD.POS = FIELD(VR.FIELD.NAME,'.',1)
+            END
+            FIELD.NAME = F(VR.FIELD.POS)
+            GOSUB GET.ACTUAL.FIELD.NAME
+        END
+
+        IF FIELD.NAME = 'I.S.I.N' THEN
+            FIELD.NAME := '.'
+        END
+
+        IF VR.FIELD.POS GE CORE.FIELD.NOS THEN
+            CONTINUE
+        END
+
+
+        CURR.FIELD = VR.FIELD.POS
+        IF ((T(CURR.FIELD)<3> = 'NOCHANGE' AND NOCHANGE.FLAG ) OR (T(CURR.FIELD)<3> = 'NOINPUT') OR (T(CURR.FIELD)<3> = 'EXTERN') OR (T(CURR.FIELD)<3> = 'NV.EXTERN')) THEN
+            CONTINUE
+        END
+
+* Another special case to be checked , In G12.2.06 a new field called BR.TRADE.TIME is introduced which was removed
+* in the release G13.2.06 , Hence this field has to ignored while forming the OFS string.
+
+        IF FIELD.NAME = "BR.TRADE.TIME" AND J.APPLICATION[1,9] = "SEC.TRADE" THEN
+            CONTINUE
+        END
+
+* --- Check whether the field is specified as NOINPUT field in Version
+
+        NOINPUT.POS = ''
+        LOCATE VR.ACTUAL.FIELD IN VERSION.REC<EB.VER.NOINPUT.FIELD,1> SETTING NOINPUT.POS THEN CONTINUE
+
+* Bug found in Hnb this has been added to take care of Field names in case it does not have
+* a Multi value or Field value marker in the No input field list in the version.
+
+        NOINPUT.POS = ''
+        LOCATE VR.FIELD.NAME IN VERSION.REC<EB.VER.NOINPUT.FIELD,1> SETTING NOINPUT.POS THEN CONTINUE
+
+* --- Check whether the field is specified as NOCHANGE field In Version if NOCHANGE flag is set
+
+        IF NOCHANGE.FLAG THEN
+            LOCATE VR.FIELD.NAME IN VERSION.REC<EB.VER.NOCHANGE.FIELD,1> SETTING NOCHANGE.POS THEN CONTINUE
+        END
+
+* Now check for the multivalue set and process the fields accordingly .
+* Set up the special indicator flag only when the EXPANSION flag is set
+* to N.
+
+        IF SPECIAL.INDICATOR.FLAG = 1 THEN
+            GOSUB SPECIAL.VERSION.FIELD
+        END ELSE
+            IF F(CURR.FIELD)[1,2] = 'XX' THEN
+                MULTI.FLAG = 'M'
+                IF F(VR.FIELD.POS)[4,2] = 'XX' THEN
+                    MULTI.FLAG = 'S'
+                END
+                GOSUB SPLIT.VALUES
+            END ELSE
+                MULTIVAL.NO = '1'
+                SUBVAL.NO = '1'
+                FIELD.VALUE = APPL.REC<CURR.FIELD>
+                IF TRIM(FIELD.VALUE)= '' THEN CONTINUE
+                GOSUB FORM.OFS.STRING
+            END
+        END
+    REPEAT
+
+    RETURN
+
+INITIALISE.VERSION.SETTINGS:
+****************************
+    ACT.FIELD.NAME = ''
+    SPECIAL.INDICATOR.FLAG = ''
+    MULTI.VALUE.NO = ''
+    SUB.VALUE.NO = ''
+    MULTIVAL.NO = ''
+    SUBVAL.NO = ''
+    MULTI.FLAG = ''
+    RETURN
+
+SPECIAL.VERSION.FIELD:
+**********************
+    MULTIVAL.NO = MULTI.VALUE.NO
+    SUBVAL.NO = SUB.VALUE.NO
+    IF SUBVAL.NO THEN
+        FIELD.VALUE = APPL.REC<CURR.FIELD,MULTIVAL.NO,SUBVAL.NO>
+    END ELSE
+        FIELD.VALUE = APPL.REC<CURR.FIELD,MULTIVAL.NO>
+    END
+    IF FIELD.VALUE <> '' THEN
+        GOSUB FORM.OFS.STRING
+    END
+    RETURN
+
+SPLIT.VALUES:
+*************
+    MULTIVAL.NO = 1 ; SUBVAL.NO = 1
+    MULTI.COUNT = 1
+    NO.OF.SUB.VALUES = ''
+    NO.MULTI.VALUES = ''
+    NO.MULTI.VALUES = DCOUNT(APPL.REC<CURR.FIELD>,@VM)
+    LOOP
+    WHILE MULTI.COUNT <= NO.MULTI.VALUES
+        MULTIVAL.NO = MULTI.COUNT
+        IF MULTI.FLAG = 'M' THEN
+            FIELD.VALUE = APPL.REC<CURR.FIELD,MULTIVAL.NO>
+            IF TRIM(FIELD.VALUE) = '' THEN
+                MULTI.COUNT += 1
+                CONTINUE
+            END
+************************************** Need to find a better logic if any for special cases ***************************
+
+            GOSUB FORM.OFS.STRING
+        END ELSE
+            SUB.COUNT = 1
+            NO.OF.SUB.VALUES = DCOUNT(APPL.REC<CURR.FIELD,MULTIVAL.NO>,@SM)
+            LOOP
+            WHILE SUB.COUNT <= NO.OF.SUB.VALUES
+                SUBVAL.NO = SUB.COUNT
+                FIELD.VALUE = APPL.REC<CURR.FIELD,MULTIVAL.NO,SUBVAL.NO>
+                IF TRIM(FIELD.VALUE)= '' THEN
+                    SUB.COUNT += 1
+                    CONTINUE
+                END
+                GOSUB FORM.OFS.STRING
+                SUB.COUNT += 1
+            REPEAT
+        END
+        MULTI.COUNT += 1
+    REPEAT
+
+    RETURN
+
+FORM.OFS.STRING:
+****************
+
+* Now prefixing of the FIELD.VALUE with
+* amount field in applications like LD.SCHEDULE.DFINE etc.. is not required anymore
+* as this automatically handled when the FIELD.VAL is set to YES in the OFS.SOURCE
+* application. But earlier this change is required for the ofs hence this change is
+* commented out.
+
+    IF INDEX(FIELD.VALUE,',',1) THEN    ;* Comma is used in the field value then put the details with in quotes.
+        FIELD.VALUE = QUOTE(FIELD.VALUE)
+    END
+
+* --- Check whether there is any modification done to the field before forming OFS, this is to make sure OFS string
+* --- is formated only for fields which are actually inputted by User in the Source system and also this is to make
+* --- sure we replicate the transaction as same as possible in Target system
+
+    IF APPL.HIS.REC THEN
+        R.NEW.VAL = '' ; R.OLD.VAL = ''
+
+        IF SUBVAL.NO THEN
+            R.NEW.VAL = APPL.REC<CURR.FIELD,MULTIVAL.NO,SUBVAL.NO>
+            R.OLD.VAL = APPL.HIS.REC<CURR.FIELD,MULTIVAL.NO,SUBVAL.NO>
+        END
+
+        IF MULTIVAL.NO AND NOT(SUBVAL.NO) THEN
+            R.NEW.VAL = APPL.REC<CURR.FIELD,MULTIVAL.NO>
+            R.OLD.VAL = APPL.HIS.REC<CURR.FIELD,MULTIVAL.NO>
+        END
+
+        IF NOT(MULTIVAL.NO) AND NOT(SUBVAL.NO) THEN
+            R.NEW.VAL = APPL.REC<CURR.FIELD>
+            R.OLD.VAL = APPL.HIS.REC<CURR.FIELD>
+        END
+        IF J.APPLICATION NE 'FUNDS.TRANSFER' OR J.APPLICATION NE 'TELLER' THEN
+            IF R.NEW.VAL EQ R.OLD.VAL THEN RETURN
+        END
+    END
+
+    DATA.PART = FIELD.NAME:':':MULTIVAL.NO:':':SUBVAL.NO:'=':FIELD.VALUE
+
+    IF SWAP.FLAG THEN         ;* Special condition for FX swap.
+        BEGIN CASE
+        CASE MULTI.FLAG = 'M'
+            FIELD.NAME.PART = FIELD.NAME:':_':MULTIVAL.NO:':='
+            FIELD.VALUE := '_': SECOND.LEG.REC<CURR.FIELD,MULTIVAL.NO>
+        CASE MULTI.FLAG = 'S'
+            FIELD.NAME.PART = FIELD.NAME:':_':MULTIVAL.NO:':_':SUBVAL.NO :':='
+            FIELD.VALUE := '_': SECOND.LEG.REC<CURR.FIELD,MULTIVAL.NO,SUBVAL.NO>
+        CASE 1
+            FIELD.NAME.PART = FIELD.NAME:'::='
+            FIELD.VALUE := '_':SECOND.LEG.REC<CURR.FIELD>
+        END CASE
+        DATA.PART = FIELD.NAME.PART:FIELD.VALUE
+    END
+    OFS.DATA := OFS.SEPERATOR:DATA.PART
+    OFS.SEPERATOR = ','
+    RETURN
+
+UPDATE.TAUT.LOG:
+****************
+    YID = ''
+    CALL ALLOCATE.UNIQUE.TIME(YID)
+    IF TAUT.TEXT THEN
+        IF T.LOG.LEVEL EQ 'FULL' THEN
+            BEGIN CASE
+            CASE LOG.LEVEL = 1
+                TAUT.TEXT = "Critical Error :" :TIMEDATE():" ":TAUT.TEXT
+            CASE LOG.LEVEL = 2
+                TAUT.TEXT = "Warning  :" :TIMEDATE():" ":TAUT.TEXT
+            CASE LOG.LEVEL = 3
+                TAUT.TEXT = "Info :" :TIMEDATE():" ":TAUT.TEXT
+            END CASE
+            WRITE TAUT.TEXT TO F.TAUT.LOG,YID
+        END
+
+        IF T.LOG.LEVEL EQ 'FATAL' AND LOG.LEVEL EQ 1 THEN
+            TAUT.TEXT = "Critical Error :" :TIMEDATE():" ":TAUT.TEXT
+            WRITE TAUT.TEXT TO F.TAUT.LOG,YID
+        END
+    END
+
+    TAUT.TEXT = ''
+    RETURN
+END

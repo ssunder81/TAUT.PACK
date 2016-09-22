@@ -1,0 +1,158 @@
+*-----------------------------------------------------------------------------
+* <Rating>166</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE TAUT.V.UPDATE.OFS.JNL
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_F.SPF
+    $INSERT I_IO.EQUATE
+    $INSERT I_GTS.COMMON
+    $INSERT I_F.OFS.SOURCE
+    $INSERT I_System
+    $INSERT I_F.AA.ARRANGEMENT.ACTIVITY
+    $INSERT I_F.ACCOUNT
+    $INCLUDE TAUT.BP I_F.TAUT.PARAMETER
+
+    IF RUNNING.UNDER.BATCH THEN RETURN
+
+    GOSUB OPEN.FILES
+
+    IF FOLDER.NOT.FOUND THEN RETURN
+
+    IF Y.TYPE NE 'SESSION' THEN RETURN
+
+    GOSUB LOAD.SYSTEM.VAR
+
+    RETURN
+
+OPEN.FILES:
+*-----------
+    FN.TAUT.PARAM = 'F.TAUT.PARAMETER'
+    F.TAUT.PARAM = ''
+    CALL OPF(FN.TAUT.PARAM,F.TAUT.PARAM)
+
+    R.TAUT.PARAM = ''
+    CALL F.READ(FN.TAUT.PARAM,"SYSTEM",R.TAUT.PARAM,F.TAUT.PARAM,'')
+    IF R.TAUT.PARAM THEN
+        FN.SAVE.JNL = R.TAUT.PARAM<TAUT.STORE.JNL>
+        F.SAVE.JNL = ''
+        IF FN.SAVE.JNL THEN
+            CALL OPF(FN.SAVE.JNL,F.SAVE.JNL)
+        END
+
+        FN.STORE.TXNS= R.TAUT.PARAM<TAUT.STORE.TXNS>
+        F.STORE.TXNS= ''
+        IF FN.STORE.TXNS THEN
+            CALL OPF(FN.STORE.TXNS,F.STORE.TXNS)
+        END
+
+        IF NOT(FN.SAVE.JNL) OR NOT(FN.STORE.TXNS) THEN
+            FOLDER.NOT.FOUND = 1
+        END
+    END
+
+    Y.OFS.SOURCE = OFS$SOURCE.ID
+
+    FN.OFS.SOURCE = 'F.OFS.SOURCE'
+    F.OFS.SOURCE = ''
+    CALL OPF(FN.OFS.SOURCE, F.OFS.SOURCE)
+
+    CALL F.READ(FN.OFS.SOURCE, Y.OFS.SOURCE, R.OFS, F.OFS.SOURCE, Y.ERR)
+    Y.TYPE = R.OFS<OFS.SRC.SOURCE.TYPE>
+
+    RETURN
+
+LOAD.SYSTEM.VAR:
+****************
+
+    Y.FUN = V$FUNCTION
+    JNL.ID = ''
+    SAVE.E = E
+    Y.MASTER.JNL.ID = System.getVariable('MASTER.JNL.ID')
+    IF E OR Y.MASTER.JNL.ID EQ 'MASTER.JNL.ID' THEN
+        E = ''
+        IF ID.NEW[1,2] EQ 'AA' THEN
+            Y.INIT.TYPE = R.NEW(AA.ARR.ACT.INITIATION.TYPE)
+            IF Y.INIT.TYPE EQ 'TRANSACTION' THEN
+                Y.ID = R.NEW(AA.ARR.ACT.TXN.CONTRACT.ID)
+            END ELSE
+                Y.ID = ID.NEW
+            END
+        END ELSE
+            Y.ID = ID.NEW
+        END
+        MIL.SEC = INT(MOD(SYSTEM(12),1000))
+        MIL.SEC = FMT(MIL.SEC,"R%3")
+        Y.DATE  = FMT(DATE(),'D4/')
+*               Y.DATE  = Y.DATE[7,4] : Y.DATE[4,2] : Y.DATE[1,2]
+        Y.DATE  = Y.DATE[7,4] : Y.DATE[1,2] : Y.DATE[4,2]   ;*Check the Date Format on the system & then comment the above or this line.
+        Y.TIME = FMT(TIME(),'MTS')
+        Y.TIME = Y.TIME[1,2]:Y.TIME[4,2]:Y.TIME[7,2] :".":MIL.SEC
+        JNL.ID = Y.DATE :".": Y.TIME :"_": APPLICATION : "_":Y.ID:"_":Y.FUN:"_":PGM.VERSION[2,99]:"_":OPERATOR:"_":ID.COMPANY
+        Y.MASTER.JNL.ID = JNL.ID
+        CALL System.setVariable('MASTER.JNL.ID',JNL.ID)
+        GOSUB PROCESS
+    END
+
+    E = SAVE.E
+    RETURN
+
+PROCESS:
+********
+    R.APPL.OFS = ''
+    R.APPL.REC = ''
+    SAVE.JNL.FWT = ''
+
+    MATBUILD R.APPL.REC FROM R.NEW
+    R.APPL.REC = LOWER(R.APPL.REC)
+
+    X = 0
+    SAVE.FWT = FWT
+    LOOP
+        REMOVE F.FL.NAME FROM SAVE.FWT SETTING REMOVE$
+    WHILE F.FL.NAME:REMOVE$
+        X +=1
+        Y.FWF = FWF(X)
+        Y.FWF = TRIM(Y.FWF,'',"D")
+        IF Y.FWF[1,1] EQ 'W' OR Y.FWF[1,1] EQ 'L' THEN
+            IF SAVE.JNL.FWT THEN
+                SAVE.JNL.FWT := @VM :F.FL.NAME
+            END ELSE
+                SAVE.JNL.FWT = F.FL.NAME
+            END
+        END
+    REPEAT
+
+    IF SAVE.JNL.FWT THEN
+        R.JNL.REC = ''
+        CALL F.READ(FN.SAVE.JNL,Y.MASTER.JNL.ID,R.JNL.REC,F.SAVE.JNL,'')
+
+        IF R.JNL.REC THEN
+            R.JNL.REC := @VM : SAVE.JNL.FWT
+        END ELSE
+            R.JNL.REC = SAVE.JNL.FWT
+        END
+        IF R.JNL.REC THEN
+            CALL F.WRITE(FN.SAVE.JNL,Y.MASTER.JNL.ID,R.JNL.REC) 
+            R.JNL.REC = ''
+        END
+
+        CALL F.READ(FN.STORE.TXNS,Y.MASTER.JNL.ID,R.APPL.OFS,F.STORE.TXNS,'')
+        IF  R.APPL.OFS THEN
+            R.APPL.OFS := FM: APPLICATION:"_":ID.NEW:"%%":R.APPL.REC
+        END ELSE
+            R.APPL.OFS = APPLICATION:"_":ID.NEW:"%%":R.APPL.REC
+        END
+
+        IF R.APPL.OFS THEN
+            CALL F.WRITE(FN.STORE.TXNS,Y.MASTER.JNL.ID,R.APPL.OFS)
+            R.APPL.OFS = ''
+        END
+    END
+    RETURN
+END
+
+
+
+

@@ -1,0 +1,112 @@
+*-----------------------------------------------------------------------------
+* <Rating>68</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE TAUT.FIELD.VALIDATION
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT TAUT.BP I_F.TAUT.PARAMETER
+    $INSERT I_F.STANDARD.SELECTION
+    $INSERT I_F.USER
+    $INSERT I_F.COMPANY
+    $INSERT I_F.VERSION
+
+    GOSUB INIT
+    GOSUB PROCESS
+    RETURN
+
+INIT:
+*----
+    I = 1
+    Y.SS.ERR = ''
+    Y.USR.ERR = ''
+    Y.COMP.ERR = ''
+    Y.VERS.ERR = ''
+
+    FN.STANDARD.SELECTION = 'F.STANDARD.SELECTION'
+    F.STANDARD.SELECTION = ''
+    CALL OPF(FN.STANDARD.SELECTION, F.STANDARD.SELECTION)
+
+    FN.USER = 'F.USER'
+    F.USER = ''
+    CALL OPF(FN.USER, F.USER)
+
+    FN.COMPANY = 'F.COMPANY'
+    F.COMPANY= ''
+    CALL OPF(FN.COMPANY, F.COMPANY)
+
+    FN.VERSION = 'F.VERSION'
+    F.VERSION = ''
+    CALL OPF(FN.VERSION, F.VERSION)
+
+    RETURN
+
+PROCESS:
+*-------
+    Y.EXCL.APPL.TOT = R.NEW(TAUT.EXCL.APPL)
+    Y.APPL.CNT = DCOUNT(Y.EXCL.APPL.TOT,VM)
+    LOOP
+    WHILE I LE Y.APPL.CNT
+        Y.EXCL.FUN = R.NEW(TAUT.EXCL.FUNCTION)<1,I>
+        Y.OFS.QUEUE.PATH = R.NEW(TAUT.STORE.FWD.QUEUE)
+        Y.LOG.PATH = R.NEW(TAUT.LOG.FILE)
+        Y.STORE.JNL.PATH = R.NEW(TAUT.STORE.JNL)
+
+        Y.LIST.OF.FUN = 'A 2 B C D E F H I L P R S V'
+        CHANGE ' ' TO VM IN Y.LIST.OF.FUN
+        LOCATE Y.EXCL.FUN IN Y.LIST.OF.FUN<1,1> SETTING Y.FUN.POS THEN
+        END ELSE
+            AF = TAUT.EXCL.FUNCTION
+            AV = I
+            ETEXT = 'EB-INVALID.FUNT.TABLE'
+            CALL STORE.END.ERROR
+        END
+
+        Y.TEMP.PATH = ''
+        Y.PATH = Y.OFS.QUEUE.PATH
+        Y.FIELD.NO = TAUT.STORE.FWD.QUEUE
+        GOSUB CHECK.OS.CHANGE.SLASH
+
+        IF Y.LOG.PATH THEN
+            Y.SLASH.CNT = DCOUNT(Y.LOG.PATH,'/')
+            Y.LOG.PATH = FIELDS(Y.LOG.PATH,'/',1,Y.SLASH.CNT-1)
+            OPEN '',Y.LOG.PATH TO F.LOG.PATH ELSE
+                AF = TAUT.LOG.FILE
+                AV = I
+                ETEXT = 'EB-INVALID.PATH.ENT'
+                CALL STORE.END.ERROR
+            END
+        END
+
+        Y.TEMP.PATH = ''
+        Y.PATH = Y.STORE.JNL.PATH
+        Y.FIELD.NO = TAUT.STORE.JNL
+        GOSUB CHECK.OS.CHANGE.SLASH
+
+        I++
+    REPEAT
+
+    RETURN
+
+CHECK.OS.CHANGE.SLASH:
+*---------------------
+    IF SYSTEM(1017) MATCHES 'WINNT':VM:'WIN95' THEN         ;* if windows
+        slash = '\'
+        CHANGE '/' TO slash IN Y.PATH
+    END ELSE        ;* unix , etc
+        slash = '/'
+        CHANGE '\' TO slash IN Y.PATH
+    END
+
+    OPENPATH Y.PATH TO Y.TEMP.PATH ELSE Y.PATH.ERR = 1
+    IF Y.PATH.ERR THEN
+        AF = Y.FIELD.NO
+        AV = I
+        ETEXT = 'EB-INVALID.PATH.ENT'
+        CALL STORE.END.ERROR
+    END
+
+    RETURN
+END
+
+

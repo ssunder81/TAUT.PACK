@@ -1,0 +1,224 @@
+*-----------------------------------------------------------------------------
+* <Rating>-36</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE TAUT.PRE.UPLOAD.PROCESS
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_F.STANDARD.SELECTION
+    $INSERT I_XML.EQUATE
+    $INSERT I_GTS.COMMON
+    $INCLUDE TAUT.BP I_F.TAUT.PARAMETER
+    $INCLUDE TAUT.BP I_F.TAUT.APPL.CHANGE
+
+    GOSUB INIT
+    GOSUB PROCESS
+
+    RETURN
+
+*--------------------------------------------------------------------*
+INIT:
+*-----*
+
+    FN.TAUT.PARAM = 'F.TAUT.PARAMETER'
+    F.TAUT.PARAM = ''
+    CALL OPF(FN.TAUT.PARAM,F.TAUT.PARAM)
+
+    R.TAUT.PARAM = ''
+    TAUT.PARAM.READ.ERR = ''
+    CALL F.READ(FN.TAUT.PARAM,'SYSTEM',R.TAUT.PARAM,F.TAUT.PARAM,TAUT.PARAM.READ.ERR)
+
+    FN.TAUT.APPL.CHANGE = 'F.TAUT.APPL.CHANGE'
+    F.TAUT.APPL.CHANGE = ''
+    CALL OPF(FN.TAUT.APPL.CHANGE,F.TAUT.APPL.CHANGE)
+
+    IF R.TAUT.PARAM THEN
+        DATA.SYNC = R.TAUT.PARAM<TAUT.DATA.SYNC>
+
+        IF DATA.SYNC EQ 'OFFLINE' THEN
+
+            STORE.FWD.QUEUE = R.TAUT.PARAM<TAUT.STORE.FWD.QUEUE>
+            F.STORE.FWD.QUEUE = ''
+            CALL OPF(STORE.FWD.QUEUE,F.STORE.FWD.QUEUE)
+
+            Y.TGT.UPLOAD.DONE = R.TAUT.PARAM<TAUT.TGT.UPLOAD.DONE>
+            FN.TGT.UPLOAD.DONE = Y.TGT.UPLOAD.DONE
+            F.TGT.UPLOAD.DONE = ""
+            CALL OPF(FN.TGT.UPLOAD.DONE,F.TGT.UPLOAD.DONE)
+
+            T.LOG.LEVEL = R.TAUT.PARAM<TAUT.LOG.LEVEL>
+
+            IF T.LOG.LEVEL NE 'NONE' THEN
+                LOG.FILE = R.TAUT.PARAM<TAUT.LOG.FILE>
+
+                F.TAUT.LOG = ''
+                OPEN LOG.FILE TO F.TAUT.LOG ELSE
+                    LOG.LEVEL = 1       ;* Fatal
+                    TAUT.TEXT = 'Cannot open the LOG file: ':LOG.FILE
+                    GOSUB UPDATE.TAUT.LOG
+                    RETURN
+                END
+            END
+
+        END
+    END
+
+    RETURN
+*------------------------------------------------------------------------------------------------*
+PROCESS:
+*-------*
+
+    SEL.CMD= 'SELECT ':STORE.FWD.QUEUE :" BY @ID"
+
+    CALL EB.READLIST(SEL.CMD,ID.LIST,'','','')
+
+    LOOP
+        REMOVE OFS.QUEUE.ID FROM ID.LIST SETTING QUE.POS
+    WHILE OFS.QUEUE.ID:QUE.POS
+        OFS.APPLICATION.NAME = FIELD(OFS.QUEUE.ID,'_',2)
+        OFS.FUNC = FIELD(OFS.QUEUE.ID,'_',4)
+
+        IF ((OFS.APPLICATION.NAME EQ "LD.LOANS.AND.DEPOSITS" OR OFS.APPLICATION.NAME EQ "SWAP") AND OFS.FUNC EQ "I") THEN
+
+            Y.SOURCE.TXN.ID = FIELD(OFS.QUEUE.ID,'_',3)
+
+            Y.TAUT.APPL.ID = OFS.APPLICATION.NAME
+
+            BEGIN CASE
+            CASE OFS.APPLICATION.NAME EQ "LD.LOANS.AND.DEPOSITS"
+                GOSUB LD.PROCESS
+            CASE OFS.APPLICATION.NAME EQ "SWAP"
+                GOSUB SWAP.PROCESS
+            END CASE
+
+        END
+
+    REPEAT
+
+    RETURN
+*------------------------------------------------------------------------------------------------*
+LD.PROCESS:
+*----------*
+
+    READ R.STORE.FWD.QUEUE FROM F.STORE.FWD.QUEUE,OFS.QUEUE.ID ELSE
+        LOG.LEVEL = 1         ;*Fatal
+        TAUT.TEXT = 'Cannot Find the STORE OFS QUEUE Record: ':OFS.QUEUE.ID
+        GOSUB UPDATE.TAUT.LOG
+        RETURN
+    END
+
+    IF RIGHT(R.STORE.FWD.QUEUE,2) EQ "//" THEN
+        Y.LD.LEN = LEN(R.STORE.FWD.QUEUE)
+        R.STORE.FWD.QUEUE = R.STORE.FWD.QUEUE[1,Y.LD.LEN-2]
+
+    END
+
+    Y.SELECTED.OFS.MSG = R.STORE.FWD.QUEUE
+    GOSUB TG.MANDATORY.FIELD.CHECK
+    Y.LD.ADD.FIELDS = Y.ADD.FIELDS
+    GOSUB GET.SCHEDULE
+    IF Y.LDS.OFS.MSG THEN
+        R.STORE.FWD.QUEUE = R.STORE.FWD.QUEUE:Y.LD.ADD.FIELDS:"//":Y.LDS.OFS.MSG
+        WRITE R.LDS.STORE.FWD.QUEUE TO F.TGT.UPLOAD.DONE,LDS.OFS.QUEUE.ID       ;* Move the LD schedule message to done folder and delete
+        DELETE F.STORE.FWD.QUEUE,LDS.OFS.QUEUE.ID
+    END ELSE
+        R.STORE.FWD.QUEUE = R.STORE.FWD.QUEUE:Y.ADD.FIELDS
+    END
+
+    WRITE R.STORE.FWD.QUEUE TO F.STORE.FWD.QUEUE,OFS.QUEUE.ID         ;* Write LD and LD shedule define in a single message
+
+    RETURN
+
+UPDATE.TAUT.LOG:
+*--------------*
+
+    YID = ''
+    CALL ALLOCATE.UNIQUE.TIME(YID)
+    IF TAUT.TEXT THEN
+        TAUT.TEXT = "Critical Error :" :TIMEDATE():" ":TAUT.TEXT
+        WRITE TAUT.TEXT TO F.TAUT.LOG,YID
+    END
+    RETURN
+*------------------------------------------------------------------------------------------------*
+GET.SCHEDULE:
+*------------*
+
+    LDS.SEL.CMD= 'SELECT ':STORE.FWD.QUEUE :" WITH @ID LIKE ...LD.SCHEDULE.DEFINE_":Y.SOURCE.TXN.ID:"..."
+
+    CALL EB.READLIST(LDS.SEL.CMD,LDS.LIST,'','','')
+
+    IF LDS.LIST THEN
+
+        REMOVE LDS.OFS.QUEUE.ID FROM LDS.LIST SETTING LDS.QUE.POS
+
+        READ R.LDS.STORE.FWD.QUEUE FROM F.STORE.FWD.QUEUE,LDS.OFS.QUEUE.ID ELSE
+            LOG.LEVEL = 1     ;*Fatal
+            TAUT.TEXT = 'Cannot Find the STORE OFS QUEUE Record: ':OFS.QUEUE.ID
+            GOSUB UPDATE.TAUT.LOG
+            RETURN
+        END
+
+        Y.TAUT.APPL.ID = FIELD(LDS.OFS.QUEUE.ID,'_',2)
+        Y.SELECTED.OFS.MSG = R.LDS.STORE.FWD.QUEUE
+        GOSUB TG.MANDATORY.FIELD.CHECK
+
+        IF Y.ADD.FIELDS THEN
+            R.LDS.STORE.FWD.QUEUE := Y.ADD.FIELDS
+        END
+
+        Y.FLD.CNT = DCOUNT(R.LDS.STORE.FWD.QUEUE,",")
+        Y.LDS.OFS.MSG = FIELD(R.LDS.STORE.FWD.QUEUE,",",5,Y.FLD.CNT)
+        Y.STRING = "AMOUNT:1:1="
+        Y.LEN = LEN(Y.LDS.OFS.MSG)
+        STR.POS = INDEX(Y.LDS.OFS.MSG,Y.STRING,1)
+        Y.LDS.OFS.MSG = Y.LDS.OFS.MSG[1,STR.POS-1]:Y.STRING:"USD":Y.LDS.OFS.MSG[STR.POS+11,Y.LEN]
+
+*        Y.FLD.CNT = DCOUNT(R.LDS.STORE.FWD.QUEUE,",")
+*        Y.LDS.OFS.MSG = FIELD(R.LDS.STORE.FWD.QUEUE,",",5,Y.FLD.CNT)
+*        Y.TEMP.MSG = Y.LDS.OFS.MSG
+*        Y.STRING = "AMOUNT"
+*        Y.AMT.CNT = DCOUNT(Y.TEMP.MSG,Y.STRING)
+*        Y.TEMP.MSG = CHANGE(Y.TEMP.MSG,Y.STRING,FM)
+*        Y.AMT.CNT = DCOUNT(Y.TEMP.MSG,FM)
+*        FOR I = 1 TO Y.AMT.CNT
+*            STR.POS = INDEX(Y.LDS.OFS.MSG,Y.STRING,I)
+*            Y.LEN = LEN(Y.LDS.OFS.MSG)
+*            Y.LDS.OFS.MSG = Y.LDS.OFS.MSG[1,STR.POS-1]:Y.STRING:Y.LDS.OFS.MSG[STR.POS+6,5]:"USD":Y.LDS.OFS.MSG[STR.POS+15,5]
+*        NEXT I
+
+    END
+
+    RETURN
+*------------------------------------------------------------------------------------------------*
+TG.MANDATORY.FIELD.CHECK:
+*************************
+
+    R.TAUT.APPL.CHANGE = ''
+    Y.ADD.FIELDS = ""
+    CALL F.READ(FN.TAUT.APPL.CHANGE,Y.TAUT.APPL.ID,R.TAUT.APPL.CHANGE,F.TAUT.APPL.CHANGE,CHG.READ.ERR)
+    IF R.TAUT.APPL.CHANGE NE "" THEN
+
+        NO.OF.MD.FIELD = DCOUNT(R.TAUT.APPL.CHANGE<TAUT.APC.MANDATORY.FIELDS>,VM)
+        Y.ADD.FIELDS = ""
+        FOR MPOS=1 TO NO.OF.MD.FIELD
+            MD.FIELD.NAME = R.TAUT.APPL.CHANGE<TAUT.APC.MANDATORY.FIELDS,MPOS>
+            LOCATE MD.FIELD.NAME IN Y.SELECTED.OFS.MSG SETTING MFOUND.POS ELSE
+                Y.ADD.FIELDS := ',': MD.FIELD.NAME :"::=":R.TAUT.APPL.CHANGE<TAUT.APC.FIELD.VALUE,MPOS>
+            END
+        NEXT MPOS
+
+    END
+
+    RETURN
+*------------------------------------------------------------------------------------------------*
+SWAP.PROCESS:
+*-----------*
+
+    RETURN
+*------------------------------------------------------------------------------------------------*
+END
+
+
+
+
+
